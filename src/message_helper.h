@@ -1,15 +1,11 @@
 
-enum messageType
-{
-    // Client
-    READY = 1,
-    CLOSE_CONNECTION = 255,
 
-    // Host
-    DRAW = 2,
-    CLEAR = 3,
-};
+#ifndef MESSAGE_HELPER_H
+#define MESSAGE_HELPER_H
 
-struct message {
-    int data;
-} typedef message;
+const int MESSAGE_SIZE = 4096;
+const std::string CLEAR_MSG = "^CLEAR";
+const std::string PROMPT_MSG = "^PROMPT";
+
+
+#endif // MESSAGE_HELPER_H

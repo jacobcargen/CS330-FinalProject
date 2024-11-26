@@ -2,55 +2,48 @@
 #ifndef GAME_H
 #define GAME_H
 
-#define SUIT_UNSET "#"
-#define FACE_UNSET '#'
+#include "ui.h"
+#include <string>
+#include <vector>
+#include "host.h"
 
-#define SPADES   "\u2660"
-#define HEARTS   "\u2665"
-#define CLUBS    "\u2663"
-#define DIAMONDS "\u2666"
-
-#define ACE   'A'
-#define TWO   '2'
-#define THREE '3'
-#define FOUR  '4'
-#define FIVE  '5'
-#define SIX   '6'
-#define SEVEN '7'
-#define EIGHT '8'
-#define NINE  '9'
-#define TEN   '10'
-#define JACK  'J'
-#define QUEEN 'Q'
-#define KING  'K'
 
 struct card
 {
-    char face = FACE_UNSET;
+    std::string face = FACE_UNSET;
     std::string suit = SUIT_UNSET;
 } typedef card;
 
-struct player
+struct gamePlayer
 {
+    Player * client;
     int id;
     std::string name;
-    card * cards;
+    std::vector<card> cards;
     int money;
 
-} typedef player;
+} typedef gamePlayer;
 
 class Game {
 public:
     // Constructor
     Game();
     // Public methods
+    void init(Host * h);
     void test();
+    bool hasStarted();
+    void dealCardsTestGameExample();
+    void setGameAsReady();
+    void AddPlayer(const std::string& name, Player * client);
+    void RemovePlayer(Player * client);
+    void gameTick();
+
+    void nextPlayer();
 
 private:
     // Private
-    void Game::waitForReady();
-    void Game::gameLoop();
-    void Game::updateClients();
+    bool isStarted;
+    void updateClients();
 };
 
 #endif // GAME_H

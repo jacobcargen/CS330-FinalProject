@@ -6,11 +6,11 @@ class Client {
 public:
     // Constructor
     Client();
-    // Public methods
-    void test();
 
 private:
     // Private
+    void Start();
+    void Join(std::string ip);
 
 };
 
