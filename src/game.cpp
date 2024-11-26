@@ -4,6 +4,7 @@
 #include "message_helper.h"
 #include "host.h"
 #include "game.h"
+#include <vector>
 
 // Store players here
 std::vector<gamePlayer> players;
@@ -72,11 +73,8 @@ void Game::dealCardsTestGameExample()
         // Notify the current player
         host->sendMessageToClient(currentPlayer.client, "You're up!\n", false);
 
-        // Add a test card to the current player's hand
-        card testCard;
-        testCard.face = ACE;
-        testCard.suit = SPADES;
-        currentPlayer.cards.push_back(testCard);
+        
+
 
         // Advance to the next player
         pTurn = (pTurn + 1) % players.size();
@@ -131,7 +129,20 @@ void Game::gameTick()
             if (lastResponse == "y")
             {
                 UI ui;
-                std::string hand = ui.getTestHand();
+                card aceHearts;
+                aceHearts.face = ACE;
+                aceHearts.suit = HEARTS;
+                currentPlayerTurn->cards.push_back(aceHearts);
+
+                std::vector<cardByLine> cardsStr;
+                // For each of their cards
+                for (card c : currentPlayerTurn->cards)
+                {
+                    cardByLine cStr = ui.cardToString(c.face, c.suit);
+                    cardsStr.push_back(cStr);
+                }
+                std::string hand = ui.handToPrintable(cardsStr);
+                
                 host->sendMessageToClient(currentPlayerTurn->client, hand, false);
             }
             else if (lastResponse == "n") 

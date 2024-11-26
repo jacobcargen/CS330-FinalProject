@@ -64,10 +64,10 @@ public:
     std::string promptLine(const std::string& text);
     cardByLine cardToString(std::string face, std::string suit);
     std::string getTestHand();
+    std::string handToPrintable(std::vector<cardByLine> cards);
 
 private:
     // Private
-    std::string handToPrintable(std::vector<cardByLine> cards);
 };
 
 #endif // UI_H
