@@ -218,6 +218,10 @@ void Game::startPoker()
     for (gamePlayer& p : players)
     {
         p.money = 500;
+        card c;
+        c.face = ACE;
+        c.suit = SPADES;
+        p.cards.push_back(c);
     }
 
     deck.clear();
@@ -259,7 +263,8 @@ void Game::pokerGame()
             str += s;
         }
         host->sendMessageToClient(player.client, str, false);
-        std::cout << std::to_string(player.cards.at(0));
+
+        std::cout << player.cards.at(0).face;
     }
     // Next player turn
     nextPlayer();
