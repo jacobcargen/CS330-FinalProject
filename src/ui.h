@@ -15,10 +15,11 @@
 #define SUIT_UNSET "#"
 #define FACE_UNSET "#"
 
-#define SPADES   "\u2660"
-#define HEARTS   "\u2665"
-#define CLUBS    "\u2663"
-#define DIAMONDS "\u2666"
+#define SPADES   "\033[34m\u2660\033[0m"
+#define HEARTS   "\033[91m\u2665\033[0m"
+#define CLUBS    "\033[34m\u2663\033[0m"   // dark blueDeep
+#define DIAMONDS "\033[91m\u2666\033[0m"   // red
+
 
 #define ACE   "A"
 #define TWO   "2"
@@ -33,6 +34,14 @@
 #define JACK  "J"
 #define QUEEN "Q"
 #define KING  "K"
+
+const std::string SUITS[4] = {
+    SPADES, DIAMONDS, CLUBS, HEARTS
+};
+const std::string FACES[13] = {
+    ACE, TWO, THREE, FOUR, FIVE, SIX, SEVEN, EIGHT, NINE,
+    TEN, JACK, QUEEN, KING
+};
 
 #define CARD_CORNER_TOP_LEFT  "\u250C"; // ┌
 #define CARD_CORNER_TOP_RIGHT "\u2510"; // ┐

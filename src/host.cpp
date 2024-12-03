@@ -8,14 +8,11 @@
 #include "game.h"
 #include <vector>
 
-constexpr int PORT = 8080;
-constexpr int MAX_CLIENTS = 8;
-const std::string WELCOME_MSG = "Welcome!\n";
-
 Player clients[MAX_CLIENTS] = {};
 
 Player * promptedClient = nullptr;
 std::string clientPromptResponse = "";
+std::string lastPrompt = "";
 
 // Constructor: Starts the host server when an object of Host is created
 Host::Host() 
@@ -171,6 +168,21 @@ void Host::start()
     close(server_fd);
 }
 
+void Host::reprompt(Player * client)
+{
+    if (!lastPrompt.empty())
+        promptClient(client, lastPrompt);
+    else
+        std::cout << "cannot reprompt" << std::endl;
+}
+
+void Host::promptComplete()
+{
+    promptedClient = nullptr;
+    clientPromptResponse = "";
+    lastPrompt = "";
+}
+
 void Host::sendMessageToClient(Player* client, const std::string& dataStr, bool isClear) 
 {
     // Make sure 
@@ -208,6 +220,8 @@ void Host::sendMessageToClient(Player* client, const std::string& dataStr, bool 
 
 void Host::promptClient(Player * client, const std::string &dataStr)
 {
+    lastPrompt = dataStr;
+
     promptedClient = client;
     clientPromptResponse = "";
     std::string data = PROMPT_MSG + dataStr;

@@ -1,6 +1,7 @@
 // ui.cpp
 #include "ui.h"
 
+
 // Constructor
 UI::UI() 
 {
@@ -15,11 +16,7 @@ void UI::Start()
 
 void UI::clearScreen() 
 {
-#ifdef _WIN32
-    system("cls");  // Clear the screen on Windows
-#else
-    system("clear");  // Clear the screen on Linux/macOS
-#endif
+    system("clear");
 }
 
 std::string UI::promptLine(const std::string& text)

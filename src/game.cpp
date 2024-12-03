@@ -4,37 +4,26 @@
 #include "message_helper.h"
 #include "host.h"
 #include "game.h"
+#include "ui.h"
 #include <vector>
 
-// Store players here
+// Store players here (TYPE 'gamePlayer' (game player) not to be confused with TYPE 'Player'(CLIENT))
 std::vector<gamePlayer> players;
-
-gamePlayer * currentPlayerTurn;
+std::vector<card> deck;
+gamePlayer * currentPlayerTurn = nullptr;
+game currentGame = POKER;
 int pTurn = 0;
-
 bool isStarted = false;
 Host * host;
 bool waitingForPlayer = false;
 
 // Constructor
-Game::Game() 
-{
-    
-}
+Game::Game() { }
 
 void Game::init(Host * h)
 {
     host = h;
-    test();
-
 }
-
-// Public method
-void Game::test() 
-{
-    std::cout << "Game Test" << std::endl;
-}
-
 bool Game::hasStarted()
 {
     return isStarted;
@@ -42,47 +31,11 @@ bool Game::hasStarted()
 void Game::setGameAsReady()
 {
     isStarted = true;
-    std::cout << "Game has been set as ready (lets just deal cards if a player wants one).\n";
-
-    dealCardsTestGameExample();
-}
-
-void Game::dealCardsTestGameExample()
-{
-    std::cout << "dealCardsTestGameExample\n";
-    // GAME SETUP
-    UI ui;
-
-    updateClients();
-
-    // Clear hands
-    for (gamePlayer p : players)
-    {
-        
-        p.cards.clear();
-    }
-
-    std::string displayString = "TEMPLETE";
-    // SPECIFIC GAME LOOP
-    int pTurn = 0; // Start with the first player's turn
-    while (true) // Replace `true` with your termination condition
-    {
-        // Get current player
-        gamePlayer currentPlayer = players.at(pTurn);
-
-        // Notify the current player
-        host->sendMessageToClient(currentPlayer.client, "You're up!\n", false);
-
-        
-
-
-        // Advance to the next player
-        pTurn = (pTurn + 1) % players.size();
-        break;
-    }
+    waitingForPlayer = false;
+    // Decide game here maybe
+    startPoker();
 
 }
-
 void Game::AddPlayer(const std::string& name, Player * client)
 {
     UI ui;
@@ -103,75 +56,53 @@ void Game::AddPlayer(const std::string& name, Player * client)
         std::cout << "Game has already started. Cannot add new players.\n";
     }
 }
-
 void Game::RemovePlayer(Player * client)
 {
     std::cout << "ill remove it later lol\n";
     
 }
-
-
 void Game::gameTick()
 {
-    std::cout << "--GAME TICK--\n";
     if (!isStarted) 
     {
         std::cout << "Game not started yet. Waiting...\n";
         return;
     }
-
     
-    if (waitingForPlayer)
+    std::cout << "--GAME TICK--\n";
+
+    // Handle waiting for player response
+    while (waitingForPlayer)
     {
         std::string lastResponse = host->getReponseFromClientPrompt();
-        if (lastResponse != "")
+        
+        if (!lastResponse.empty()) 
         {
-            if (lastResponse == "y")
-            {
-                UI ui;
-                card aceHearts;
-                aceHearts.face = ACE;
-                aceHearts.suit = HEARTS;
-                currentPlayerTurn->cards.push_back(aceHearts);
+            std::cout << "Received response: " << lastResponse << std::endl;
 
-                std::vector<cardByLine> cardsStr;
-                // For each of their cards
-                for (card c : currentPlayerTurn->cards)
-                {
-                    cardByLine cStr = ui.cardToString(c.face, c.suit);
-                    cardsStr.push_back(cStr);
-                }
-                std::string hand = ui.handToPrintable(cardsStr);
-                
-                host->sendMessageToClient(currentPlayerTurn->client, hand, false);
+            // Process the response
+            if (processResponse(lastResponse))
+            {
+                std::cout << "Valid response processed, moving to next player.\n";
+                waitingForPlayer = false;
+                host->promptComplete();
             }
-            else if (lastResponse == "n") 
-            {}
             else
             {
-                gameTick();
-                return;
+                // FIX ME
+                host->reprompt(currentPlayerTurn->client);
             }
-
-            
-            waitingForPlayer = false;
-            nextPlayer();
-            std::cout << lastResponse << std::endl;
         }
-    }
-    else
-    {
-        if (currentPlayerTurn == nullptr)
+        else 
         {
-            std::cout << "first player setting\n";
-            pTurn = -1;
-            nextPlayer();
+            std::cout << "Waiting for response...\n";
+            sleep(1);
         }
-        gameTick();
-
     }
+    // Response success, proceed VVV
+    // Not waiting for player anymore VVV
+    processGame();
 }
-
 void Game::nextPlayer()
 {
     pTurn = ((pTurn + 1) % players.size());
@@ -179,18 +110,169 @@ void Game::nextPlayer()
     std::cout << "Next player[" << pTurn << "]"<< std::endl;
     
     currentPlayerTurn = &players.at(pTurn);
-
-    // Choosing a player to prompt
-    host->promptClient(currentPlayerTurn->client, "Want a card? ('y'/'n'): ");
+    if (currentPlayerTurn == nullptr || currentPlayerTurn->client == nullptr)
+        std::cerr << "NULL PLAYER!!!" << std::endl;
     // SET waitingForPlayer to TRUE
     waitingForPlayer = true;
 }
-
-void Game::updateClients()
+void Game::getNewDeck(std::vector<card> deck)
 {
-
-    // update all the players
-    // For each client(player), send client new data (it is up to client to handle that data)
-    // Ask specific client for data the host needs (like a bet,check, etc...)
-    UI ui;
+    deck.clear();
+    for (std::string face : FACES)
+    {
+        for (std::string suit : SUITS)
+        {
+            card c;
+            c.face = face;
+            c.suit = suit;
+            deck.push_back(c);
+        }
+    }
+    return;
 }
+void Game::drawCardToPlayer(gamePlayer * p, bool shouldBePrivate) 
+{
+    if (deck.empty()) 
+        return;
+    int i = std::rand() % deck.size();
+    card c;
+    c = deck[i];
+    c.shouldBePrivate = shouldBePrivate;
+    std::cout << "!!!!!card is " << c.face << c.suit << std::endl;
+    p->cards.push_back(c);
+    deck.erase(deck.begin() + i);
+}
+void Game::clearHands()
+{
+    // Clear hands
+    for (gamePlayer& p : players)
+    {
+        p.cards.clear();
+    }
+}
+bool Game::processResponse(const std::string &lastResponse)
+{
+    std::cout << "|||processResponse|||" << std::endl;
+    switch (currentGame)
+    {
+    case POKER:
+        return pokerResponse(lastResponse);
+    
+    default:
+        return false;
+        // error
+    }
+}
+void Game::processGame()
+{
+    std::cout << "|||processGame|||" << std::endl;
+    switch (currentGame)
+    {
+    case POKER:
+        pokerGame();
+        break;
+    
+    default:
+        break;
+    }
+}
+
+std::string Game::getDisplayedPlayer(gamePlayer * player, gamePlayer * viewingPlayer)
+{
+    UI ui;
+    std::string str = "";
+
+    str += player->name;
+    str += "\t\t$";
+    str += std::to_string(player->money);
+    str += "\n";
+
+    std::vector<cardByLine> cardsStr;
+    for (card c : player->cards)
+    {
+        cardByLine cblCard;
+        if (c.shouldBePrivate && viewingPlayer != player)
+        {
+            // dont show
+            cblCard = ui.cardToString(FACE_UNSET, SUIT_UNSET);
+        }
+        else
+        {
+            cblCard = ui.cardToString(c.face, c.suit);
+        }
+        cardsStr.push_back(cblCard);
+    }
+    std::string hand = ui.handToPrintable(cardsStr);
+    str += hand;
+    return str;
+}
+
+#pragma region POKER
+
+// Poker variables
+
+void Game::startPoker()
+{
+    currentGame = POKER;
+
+    for (gamePlayer& p : players)
+    {
+        p.money = 500;
+    }
+
+    deck.clear();
+    getNewDeck(deck);
+
+    // Set up the first playedr
+    std::cout << "First player setting\n";
+    pTurn = -1;
+}
+bool Game::pokerResponse(const std::string &lastResponse)
+{
+    std::cout << "|||pokerResponse|||" << std::endl;
+    if (lastResponse == "y")
+    {
+        drawCardToPlayer(currentPlayerTurn, false);
+        return true;
+    }
+    else if (lastResponse == "n")
+        return true;
+    
+    // All else not valid
+    return false;
+}
+void Game::pokerGame()
+{
+    std::cout << "|||pokerGame|||" << std::endl;
+    UI ui;
+    
+    // Update hands for all
+    
+    for (gamePlayer& player : players)
+    {
+        std::string str = "";
+        for (gamePlayer& otherPlayer : players)
+        {
+            if (&player == &otherPlayer)
+                str += "[YOU]";
+            std::string s = getDisplayedPlayer(&otherPlayer, &player);
+            str += s;
+        }
+        host->sendMessageToClient(player.client, str, false);
+        std::cout << std::to_string(player.cards.at(0));
+    }
+    // Next player turn
+    nextPlayer();
+    // Prompt currentPlayerTurn
+    
+    host->promptClient(currentPlayerTurn->client, "Want a card? ('y'/'n'): ");
+
+    // Or waiting for dealing etc.
+    // 
+    //give cards display changes etc
+
+
+
+}
+
+#pragma endregion
