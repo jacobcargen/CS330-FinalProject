@@ -63,6 +63,7 @@ void Host::start()
     fd_set readfds;
     while (true) 
     {
+        std::cout << "--Main loop--\n";
 
         FD_ZERO(&readfds);
         FD_SET(server_fd, &readfds);
@@ -164,7 +165,7 @@ void Host::start()
             game.gameTick();
         }
     }
-
+    std::cout << "Closing\n";
     close(server_fd);
 }
 

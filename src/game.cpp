@@ -3,9 +3,10 @@
 #include "game.h"
 #include "message_helper.h"
 #include "host.h"
-#include "game.h"
 #include "ui.h"
 #include <vector>
+#include <map>
+#include "time.h"
 
 // Store players here (TYPE 'gamePlayer' (game player) not to be confused with TYPE 'Player'(CLIENT))
 std::vector<gamePlayer> players;
@@ -16,6 +17,9 @@ int pTurn = 0;
 bool isStarted = false;
 Host * host;
 bool waitingForPlayer = false;
+
+
+pokerData pokerGameData;
 
 // Constructor
 Game::Game() { }
@@ -63,16 +67,16 @@ void Game::RemovePlayer(Player * client)
 }
 void Game::gameTick()
 {
+    std::cout << "--GAME TICK--\n";
     if (!isStarted) 
     {
         std::cout << "Game not started yet. Waiting...\n";
         return;
     }
     
-    std::cout << "--GAME TICK--\n";
 
     // Handle waiting for player response
-    while (waitingForPlayer)
+    if (waitingForPlayer)
     {
         std::string lastResponse = host->getReponseFromClientPrompt();
         
@@ -89,14 +93,15 @@ void Game::gameTick()
             }
             else
             {
+                std::cout << "Trying reprompt" << std::endl;
                 // FIX ME
+                waitingForPlayer = true;
                 host->reprompt(currentPlayerTurn->client);
             }
         }
         else 
         {
             std::cout << "Waiting for response...\n";
-            sleep(1);
         }
     }
     // Response success, proceed VVV
@@ -105,42 +110,108 @@ void Game::gameTick()
 }
 void Game::nextPlayer()
 {
-    pTurn = ((pTurn + 1) % players.size());
-
-    std::cout << "Next player[" << pTurn << "]"<< std::endl;
-    
-    currentPlayerTurn = &players.at(pTurn);
-    if (currentPlayerTurn == nullptr || currentPlayerTurn->client == nullptr)
-        std::cerr << "NULL PLAYER!!!" << std::endl;
-    // SET waitingForPlayer to TRUE
-    waitingForPlayer = true;
-}
-void Game::getNewDeck(std::vector<card> deck)
-{
-    deck.clear();
-    for (std::string face : FACES)
+    // Move to the next player in the list
+    int attempts = players.size(); // To prevent infinite loops
+    do
     {
-        for (std::string suit : SUITS)
+        pTurn = (pTurn + 1) % players.size(); // Wrap around to the first player if needed
+        currentPlayerTurn = &players.at(pTurn);
+
+        // Ensure the current player is valid and not folded
+        if (currentPlayerTurn != nullptr && currentPlayerTurn->client != nullptr && !currentPlayerTurn->isFolded)
+        {
+            waitingForPlayer = true; // Indicate we are now waiting for this player
+            std::cout << "Next player [" << pTurn << "] -> " << currentPlayerTurn->name << std::endl;
+            return;
+        }
+
+        attempts--;
+        if (attempts <= 0)
+        {
+            std::cerr << "No valid players left to take a turn!" << std::endl;
+            waitingForPlayer = false;
+            return;
+        }
+    } while (true);
+}
+
+void Game::resetGame()
+{
+    host->promptComplete();
+    pokerGameData.pot = 0;
+    pokerGameData.round = 1;
+    pokerGameData.gameRaise = 0;
+    pokerGameData.expChocie = NONE;
+    pokerGameData.sharedCards.clear();
+
+    for (gamePlayer& player : players)
+    {
+        player.hasGone = false;
+        player.isFolded = false;
+        player.raise = 0;
+        player.cards.clear();
+    }
+    getNewDeck(deck);
+    waitingForPlayer = false;
+
+    // Set up the first playedr
+    std::cout << "First player setting\n";
+    pTurn = -1;
+    std::cout << "Game has been reset. Starting a new game!" << std::endl;
+    isStarted = true;
+    host->promptComplete();
+}
+
+void Game::getNewDeck(std::vector<card>& deck)
+{
+    deck.clear(); // Ensure the deck is empty before adding new cards.
+    for (const std::string& face : FACES)
+    {
+        for (const std::string& suit : SUITS)
         {
             card c;
             c.face = face;
             c.suit = suit;
+            //std::cout << "Deck Add >>> FACE: " << c.face << ", SUIT: " << c.suit << std::endl;
             deck.push_back(c);
         }
     }
-    return;
 }
+// fix
 void Game::drawCardToPlayer(gamePlayer * p, bool shouldBePrivate) 
 {
-    if (deck.empty()) 
-        return;
-    int i = std::rand() % deck.size();
-    card c;
-    c = deck[i];
+    card c = getRandomCard();
     c.shouldBePrivate = shouldBePrivate;
-    std::cout << "!!!!!card is " << c.face << c.suit << std::endl;
     p->cards.push_back(c);
+}
+card Game::getRandomCard()
+{
+
+    if (deck.empty())
+    {
+        std::cout << "DECK EMPTY!" << std::endl;
+        // Error condition
+        card c;
+        c.face = FACE_UNSET;
+        c.suit = SUIT_UNSET;
+        return c;
+    }
+
+    // Seed std::rand with the current time to ensure randomness
+    std::srand(static_cast<unsigned int>(time(nullptr))); 
+    int i = std::rand() % deck.size(); // Get a random index
+
+    // Get the card at the random index
+    card c;
+    c.face = deck[i].face;
+    c.suit = deck[i].suit;
+
+    std::cout << "!!!!!card is " << c.face << c.suit << std::endl;
+
+    // Remove the card from the deck
     deck.erase(deck.begin() + i);
+
+    return c;
 }
 void Game::clearHands()
 {
@@ -159,6 +230,7 @@ bool Game::processResponse(const std::string &lastResponse)
         return pokerResponse(lastResponse);
     
     default:
+        std::cout << "NO GAME SET" << std::endl;
         return false;
         // error
     }
@@ -177,7 +249,7 @@ void Game::processGame()
     }
 }
 
-std::string Game::getDisplayedPlayer(gamePlayer * player, gamePlayer * viewingPlayer)
+std::string Game::getDisplayedPlayer(gamePlayer * player, gamePlayer * viewingPlayer, bool isShow)
 {
     UI ui;
     std::string str = "";
@@ -191,7 +263,7 @@ std::string Game::getDisplayedPlayer(gamePlayer * player, gamePlayer * viewingPl
     for (card c : player->cards)
     {
         cardByLine cblCard;
-        if (c.shouldBePrivate && viewingPlayer != player)
+        if (c.shouldBePrivate && viewingPlayer != player && !isShow)
         {
             // dont show
             cblCard = ui.cardToString(FACE_UNSET, SUIT_UNSET);
@@ -207,9 +279,9 @@ std::string Game::getDisplayedPlayer(gamePlayer * player, gamePlayer * viewingPl
     return str;
 }
 
+
 #pragma region POKER
 
-// Poker variables
 
 void Game::startPoker()
 {
@@ -219,12 +291,10 @@ void Game::startPoker()
     {
         p.money = 500;
         card c;
-        c.face = ACE;
-        c.suit = SPADES;
-        p.cards.push_back(c);
+        p.isFolded = false;
     }
+    pokerGameData.round = 1;
 
-    deck.clear();
     getNewDeck(deck);
 
     // Set up the first playedr
@@ -233,51 +303,538 @@ void Game::startPoker()
 }
 bool Game::pokerResponse(const std::string &lastResponse)
 {
-    std::cout << "|||pokerResponse|||" << std::endl;
-    if (lastResponse == "y")
+    std::cout << "\n\n\t\t\t!!!FOUND: " << lastResponse << "\n\n";
+
+    if (currentPlayerTurn == nullptr)
     {
-        drawCardToPlayer(currentPlayerTurn, false);
-        return true;
+        std::cout << "PLAYER NULL" << std::endl;
+        return false;
     }
-    else if (lastResponse == "n")
+    currentPlayerTurn->hasGone = true;
+
+    // Fold
+    if (lastResponse == "f")
+    {
+        
+        std::cout << "Folding." << std::endl;
+        currentPlayerTurn->isFolded = true;
         return true;
-    
-    // All else not valid
+        
+    }
+
+    if (pokerGameData.expChocie == BET_AMOUNT)
+    {
+        pokerGameData.expChocie = NONE;
+        int betAmount = 0;
+        try
+        {
+            betAmount = std::stoi(lastResponse);
+        }
+        catch(const std::exception& e)
+        {
+            std::cout << "ERROR" << std::endl;
+            std::cerr << e.what() << '\n';
+        }
+        
+        if (betAmount > 0 && betAmount <= currentPlayerTurn->money)
+        {
+            currentPlayerTurn->money -= betAmount;
+            pokerGameData.pot += betAmount;
+            pokerGameData.gameRaise += betAmount;
+            return true;
+        }
+    }
+    else if (pokerGameData.expChocie == RAISE_AMOUNT)
+    {
+        pokerGameData.expChocie = NONE;
+        int raiseAmount = 0;
+        try
+        {
+            raiseAmount = std::stoi(lastResponse);
+        }
+        catch(const std::exception& e)
+        {
+            std::cout << "ERROR" << std::endl;
+            std::cerr << e.what() << '\n';
+        }
+        
+        int requiredAmt = pokerGameData.gameRaise - currentPlayerTurn->raise;
+        if (currentPlayerTurn->money >= raiseAmount + requiredAmt)
+        {
+            currentPlayerTurn->money -= raiseAmount + requiredAmt;
+            pokerGameData.pot += raiseAmount + requiredAmt;
+            pokerGameData.gameRaise += raiseAmount;
+            return true;
+        }
+    }
+    else if (pokerGameData.expChocie == BET_CHECK)
+    {
+        pokerGameData.expChocie = NONE;
+        std::cout << currentPlayerTurn->name;
+        if (lastResponse == "b") // Bet
+        {
+            std::cout << " is betting ... ";
+            host->promptClient(currentPlayerTurn->client, "How much? $");
+            pokerGameData.expChocie = BET_AMOUNT;
+            return true;
+        }
+        else if (lastResponse == "c") // Check
+        {
+            std::cout << " has checked." << std::endl;
+            return true;
+        }
+    }
+    else if (pokerGameData.expChocie == CALL_RAISE)
+    {
+        pokerGameData.expChocie = NONE;
+        std::cout << currentPlayerTurn->name;
+        if (lastResponse == "r") // Raise
+        {
+            host->promptClient(currentPlayerTurn->client, "How much? $");
+            pokerGameData.expChocie = RAISE_AMOUNT;
+            std::cout << " is rasing ... " << std::endl;
+            return true;
+        }
+        else if (lastResponse == "c") // Call
+        {
+            int requiredAmt = pokerGameData.gameRaise - currentPlayerTurn->raise;
+            if (currentPlayerTurn->money < requiredAmt) // ALL IN
+            {
+                pokerGameData.pot += currentPlayerTurn->money;
+                currentPlayerTurn->money = 0;
+                // MAKE SURE THEY ONLY GET WHAT THEY PUT IN
+                
+                std::cout << " is going all in." << std::endl;
+                return true;
+            }
+            else // Call
+            {
+                currentPlayerTurn->money -= requiredAmt;
+                pokerGameData.pot += requiredAmt;
+
+                std::cout << " has called." << std::endl;
+                return true;
+            }
+        }
+    }
+    currentPlayerTurn->hasGone = false;
+    pokerGameData.expChocie = NONE;
     return false;
 }
+void Game::determineWhoWins()
+{
+
+    gamePlayer * winningPlayer = determineWinningPlayer();
+    // Tell all players who won
+    for (gamePlayer &p : players)
+    {
+        std::string winMsg = "";
+        if (&p == winningPlayer)
+            winMsg = "YOU WON $" + std::to_string(pokerGameData.pot) + "!!!\n";
+        else
+            winMsg = winningPlayer->name + " has won $" + std::to_string(pokerGameData.pot) + "\n";
+        host->sendMessageToClient(p.client, winMsg, false);
+    }
+    winningPlayer->money += pokerGameData.pot;
+
+    resetGame();
+}
+
+gamePlayer* Game::determineWinningPlayer()
+{
+    gamePlayer* winningPlayer = nullptr;
+    int bestHandRank = -1; // Higher rank indicates a better hand
+    std::vector<int> bestHandValues; // For tie-breaking
+
+    for (gamePlayer& player : players)
+    {
+        // Skip folded players
+        if (player.isFolded)
+            continue;
+
+        // Combine player's cards with shared cards
+        std::vector<card> combinedCards = player.cards;
+        combinedCards.insert(combinedCards.end(), pokerGameData.sharedCards.begin(), pokerGameData.sharedCards.end());
+
+        // Determine hand rank and tie-breaking values
+        int handRank;
+        std::vector<int> handValues;
+
+        evaluatePokerHand(combinedCards, handRank, handValues);
+
+        // Compare current player's hand with the best hand so far
+        if (handRank > bestHandRank || (handRank == bestHandRank && handValues > bestHandValues))
+        {
+            bestHandRank = handRank;
+            bestHandValues = handValues;
+            winningPlayer = &player;
+        }
+    }
+
+    // Announce the winner or handle edge case
+    if (winningPlayer == nullptr)
+    {
+        std::cout << "No winner found!" << std::endl;
+    }
+    else
+    {
+        std::cout << "Winning player is: " << winningPlayer->name << " with hand rank " << bestHandRank << std::endl;
+    }
+
+    return winningPlayer;
+}
+
+void Game::evaluatePokerHand(const std::vector<card>& cards, int& handRank, std::vector<int>& handValues)
+{
+    std::map<std::string, int> valueCount; // Map card face to frequency
+    std::map<std::string, int> suitCount; // Map card suit to frequency
+
+    // Map string faces to numerical values for easier comparison
+    std::map<std::string, int> faceToValue = {
+        {"2", 2}, {"3", 3}, {"4", 4}, {"5", 5}, {"6", 6}, {"7", 7},
+        {"8", 8}, {"9", 9}, {"10", 10}, {"J", 11}, {"Q", 12}, {"K", 13}, {"A", 14}};
+
+    // Count card values and suits
+    for (const card& c : cards)
+    {
+        valueCount[c.face]++;
+        suitCount[c.suit]++;
+    }
+
+    // Extract sorted unique face values as integers
+    std::vector<int> uniqueFaces;
+    for (const auto& pair : valueCount)
+    {
+        uniqueFaces.push_back(faceToValue[pair.first]);
+    }
+    std::sort(uniqueFaces.begin(), uniqueFaces.end());
+
+    // Check for Flush
+    bool isFlush = false;
+    std::string flushSuit = "";
+    for (const auto& suit : suitCount)
+    {
+        if (suit.second >= 5)
+        {
+            isFlush = true;
+            flushSuit = suit.first;
+            break;
+        }
+    }
+
+    // Check for Straight
+    bool isStraight = false;
+    std::vector<int> straightValues;
+
+    int consecutiveCount = 1;
+    for (size_t i = 1; i < uniqueFaces.size(); ++i)
+    {
+        if (uniqueFaces[i] == uniqueFaces[i - 1] + 1)
+        {
+            consecutiveCount++;
+            if (consecutiveCount >= 5)
+            {
+                isStraight = true;
+                straightValues = std::vector<int>(uniqueFaces.begin() + i - 4, uniqueFaces.begin() + i + 1);
+            }
+        }
+        else
+        {
+            consecutiveCount = 1;
+        }
+    }
+
+    // Handle Ace-low straight (e.g., A-2-3-4-5)
+    if (!isStraight && uniqueFaces.size() >= 5 &&
+        uniqueFaces.back() == 14 && uniqueFaces[0] == 2 &&
+        uniqueFaces[1] == 3 && uniqueFaces[2] == 4 && uniqueFaces[3] == 5)
+    {
+        isStraight = true;
+        straightValues = {5, 4, 3, 2, 1};
+    }
+
+    // Check for Straight Flush
+    bool isStraightFlush = false;
+    if (isFlush && isStraight)
+    {
+        std::vector<int> flushCards;
+        for (const card& c : cards)
+        {
+            if (c.suit == flushSuit)
+                flushCards.push_back(faceToValue[c.face]);
+        }
+        std::sort(flushCards.begin(), flushCards.end());
+        int consecutiveFlushCount = 1;
+        for (size_t i = 1; i < flushCards.size(); ++i)
+        {
+            if (flushCards[i] == flushCards[i - 1] + 1)
+            {
+                consecutiveFlushCount++;
+                if (consecutiveFlushCount >= 5)
+                {
+                    isStraightFlush = true;
+                    straightValues = std::vector<int>(flushCards.begin() + i - 4, flushCards.begin() + i + 1);
+                }
+            }
+            else
+            {
+                consecutiveFlushCount = 1;
+            }
+        }
+    }
+
+    // Check for Four of a Kind, Full House, Three of a Kind, Two Pair, and One Pair
+    std::vector<std::pair<int, int>> counts; // {frequency, value}
+    for (const auto& pair : valueCount)
+    {
+        counts.push_back({pair.second, faceToValue[pair.first]});
+    }
+    std::sort(counts.begin(), counts.end(), std::greater<>());
+
+    // Rank hands by strength
+    if (isStraightFlush)
+    {
+        handRank = 8; // Straight Flush
+        handValues = straightValues;
+    }
+    else if (counts[0].first == 4)
+    {
+        handRank = 7; // Four of a Kind
+        handValues = {counts[0].second, counts[1].second};
+    }
+    else if (counts[0].first == 3 && counts[1].first >= 2)
+    {
+        handRank = 6; // Full House
+        handValues = {counts[0].second, counts[1].second};
+    }
+    else if (isFlush)
+    {
+        handRank = 5; // Flush
+        handValues = {};
+        for (const card& c : cards)
+        {
+            if (c.suit == flushSuit)
+                handValues.push_back(faceToValue[c.face]);
+        }
+        std::sort(handValues.begin(), handValues.end(), std::greater<>());
+    }
+    else if (isStraight)
+    {
+        handRank = 4; // Straight
+        handValues = straightValues;
+    }
+    else if (counts[0].first == 3)
+    {
+        handRank = 3; // Three of a Kind
+        handValues = {counts[0].second};
+        for (const auto& pair : counts)
+        {
+            if (pair.second != counts[0].second)
+                handValues.push_back(pair.second);
+        }
+    }
+    else if (counts[0].first == 2 && counts[1].first == 2)
+    {
+        handRank = 2; // Two Pair
+        handValues = {counts[0].second, counts[1].second, counts[2].second};
+    }
+    else if (counts[0].first == 2)
+    {
+        handRank = 1; // One Pair
+        handValues = {counts[0].second};
+        for (const auto& pair : counts)
+        {
+            if (pair.second != counts[0].second)
+                handValues.push_back(pair.second);
+        }
+    }
+    else
+    {
+        handRank = 0; // High Card
+        for (const card& c : cards)
+        {
+            handValues.push_back(faceToValue[c.face]);
+        }
+        std::sort(handValues.begin(), handValues.end(), std::greater<>());
+    }
+}
+
 void Game::pokerGame()
 {
     std::cout << "|||pokerGame|||" << std::endl;
     UI ui;
-    
-    // Update hands for all
-    
-    for (gamePlayer& player : players)
-    {
-        std::string str = "";
-        for (gamePlayer& otherPlayer : players)
-        {
-            if (&player == &otherPlayer)
-                str += "[YOU]";
-            std::string s = getDisplayedPlayer(&otherPlayer, &player);
-            str += s;
-        }
-        host->sendMessageToClient(player.client, str, false);
 
-        std::cout << player.cards.at(0).face;
-    }
     // Next player turn
     nextPlayer();
-    // Prompt currentPlayerTurn
+    int breakLmt = players.size();
+
+    // Skip folded players
+    while (currentPlayerTurn->isFolded)
+    {
+        std::cout << "looping\n";
+        nextPlayer();
+        breakLmt--;
+        if (breakLmt < 0)
+        {
+            std::cout << "End game\n";
+            UpdateDisplayForAll(true);
+            determineWhoWins();
+            // Start new game
+            return;
+        }
+    }
+
+    // Check how many players are left in the game
+    int pLeft = 0;
+    for (gamePlayer& p : players)
+    {
+        if (!p.isFolded)
+            pLeft++;
+    }
+
+    if (pLeft <= 1)
+    {
+        std::cout << "pLeft<=1\n";
+        // currentPlayerTurn has won
+        std::string winMsg = "You won $" + std::to_string(pokerGameData.pot);
+        host->sendMessageToClient(currentPlayerTurn->client, winMsg, false);
+        currentPlayerTurn->money += pokerGameData.pot;
+        UpdateDisplayForAll(true);
+        resetGame();
+        return;
+    }
+
+
+    // Check if the round is finished
+    bool isRoundFinished = true;
+
+    for (gamePlayer& p : players)
+    {
+        if (!p.isFolded)
+        {
+            
+            if (!(p.hasGone && p.raise == pokerGameData.gameRaise))
+            {
+                isRoundFinished = false;
+                break;
+            }
+        }
+    }
+    // Move to the next round if all players are finished
+    if (isRoundFinished || pokerGameData.round == 1)
+    {
+        std::cout << "All players have acted. Advancing to the next round." << std::endl;
+
+        // Reset `hasGone` for all players
+        for (gamePlayer& p : players)
+            p.hasGone = false;
+
+        // Handle the next round
+        switch (pokerGameData.round++)
+        {
+        case 1: // Give each player 2 cards
+            std::cout << "Drawing 2 cards to each player\n";
+            for (gamePlayer& p : players)
+            {
+                if (!p.isFolded)
+                {
+                    drawCardToPlayer(&p, true);
+                    drawCardToPlayer(&p, true);
+                }
+            }
+            break;
+        case 2: // 3 cards in the middle
+            pokerGameData.sharedCards.push_back(getRandomCard());
+            pokerGameData.sharedCards.push_back(getRandomCard());
+            pokerGameData.sharedCards.push_back(getRandomCard());
+            break;
+        case 3: // Fourth card
+            pokerGameData.sharedCards.push_back(getRandomCard());
+            break;
+        case 4: // Last round
+            pokerGameData.sharedCards.push_back(getRandomCard());
+            break;
+        case 5:
+            std::cout << "Game round finished. Determine the winner." << std::endl;
+            // Handle end-of-game logic here
+
+            UpdateDisplayForAll(true);
+
+            determineWhoWins();
+            return;
+        default:
+            std::cout << "why?\n";
+            return;
+        }
+    }
+
+
     
-    host->promptClient(currentPlayerTurn->client, "Want a card? ('y'/'n'): ");
-
-    // Or waiting for dealing etc.
-    // 
-    //give cards display changes etc
+    UpdateDisplayForAll(false);
 
 
+    // Prompt currentPlayerTurn
+    if (pokerGameData.gameRaise == 0)
+    {
+        pokerGameData.expChocie = BET_CHECK;
+        const std::string PROMPT = "Check ('c')   Bet ('b')   Fold ('f'): ";
+        host->promptClient(currentPlayerTurn->client, PROMPT);
+    }
+    else if (currentPlayerTurn->raise != pokerGameData.gameRaise && pokerGameData.gameRaise > 0)
+    {
+        pokerGameData.expChocie = CALL_RAISE;
+        const std::string PROMPT2 = "Call ('c')   Raise ('r')   Fold ('f'): ";
+        host->promptClient(currentPlayerTurn->client, PROMPT2);
+    }
+}
 
+void Game::UpdateDisplayForAll(bool isLast)
+{
+    UI ui;
+    // Update displays for all players
+    std::cout << "Updating displays\n";
+    for (gamePlayer& player : players)
+    {
+        // Clear screen
+        host->sendMessageToClient(player.client, "\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n", false);
+
+        std::cout << "Displaying for -> " << player.name << std::endl;
+
+        std::string str = "DEALER\n";
+        std::vector<cardByLine> cardsStr;
+
+        // Display shared cards
+        for (card c : pokerGameData.sharedCards)
+        {
+            cardByLine cblCard = ui.cardToString(c.face, c.suit);
+            cardsStr.push_back(cblCard);
+        }
+        std::string hand = ui.handToPrintable(cardsStr);
+        str += hand;
+
+        // Display player statuses
+        for (gamePlayer& otherPlayer : players)
+        {
+            if (&otherPlayer == currentPlayerTurn && !isLast)
+                str += "WAITING FOR >>>>";
+            if (&player == &otherPlayer)
+                str += "[YOU]";
+            if (otherPlayer.isFolded)
+                str += "[FOLDED]";
+            std::string s;
+            if (isLast)
+            {
+                s = getDisplayedPlayer(&otherPlayer, &player, true);
+            }
+            else
+            {
+                s = getDisplayedPlayer(&otherPlayer, &player, false);
+            }
+            str += s;
+        }
+
+        host->sendMessageToClient(player.client, str, false);
+    }
 }
 
 #pragma endregion

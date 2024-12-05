@@ -20,10 +20,10 @@ void Client::Start()
     UI ui;
 
     // Prompt for server IP address
-    std::string ip = ui.promptLine("Server IP:");
+    std::string ip;// = ui.promptLine("Server IP:");
     // Attempt to join the server
-    if (ip.compare("local"))
-       std::string ip = "127.0.0.1";
+    
+    ip = "127.0.0.1";
     Join(ip);
 }
 
@@ -85,21 +85,29 @@ void Client::Join(std::string ip)
         buffer[valread] = '\0'; // Null-terminate the buffer
         std::string serverMessage(buffer);
 
+        //std::cout << "=========START===========>\n" << serverMessage << "\n<===========END===========" << std::endl;
+        
         if (serverMessage.find(CLEAR_MSG) != std::string::npos)
         {
-            ui.clearScreen();
+            std::cout << "clearing" << std::endl;
+            //ui.clearScreen();
         }
         else if (serverMessage.find(PROMPT_MSG) != std::string::npos)
         {
-            
+            /*
+            int len = PROMPT_MSG.length();
+            int pos = serverMessage.find(PROMPT_MSG);
+            std::string sub = serverMessage.substr(pos + len);
+            std::string input = ui.promptLine(sub);
+            */
             std::string input = ui.promptLine(serverMessage);
-            
             send(sock, input.c_str(), input.size(), 0);
         }
         else //Print anything else
         {
             std::cout << serverMessage << std::endl;
         }
+        
     }
 
     // Close the socket when done

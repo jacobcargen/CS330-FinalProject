@@ -25,8 +25,35 @@ struct gamePlayer
     std::string name = "no name";
     std::vector<card> cards;
     int money = 0;
+    int raise = 0;
+    bool isFolded = false;
+    bool hasGone = false;
 
 } typedef gamePlayer;
+
+#pragma region Poker
+enum expectedChoice
+{
+    BET_CHECK,
+    CALL_RAISE,
+
+    RAISE_AMOUNT,
+    BET_AMOUNT,
+
+    NONE,
+};
+struct pokerData
+{
+    int round = 0;
+    int pot = 0;
+    int minBet = 0;
+    int gameRaise = 0;
+    expectedChoice expChocie = BET_CHECK;
+    std::vector<card> sharedCards;
+} typedef pokerData;
+// Poker variables
+
+#pragma endregion
 
 class Game {
 public:
@@ -51,19 +78,23 @@ private:
     bool isStarted;
     Host * host;
     bool waitingForPlayer;
-
+    void resetGame();
     void clearHands();
     void nextPlayer();
-    void getNewDeck(std::vector<card> deck);
+    void getNewDeck(std::vector<card> &deck);
     void processGame();
     bool processResponse(const std::string &lastResponse);
 
+    void evaluatePokerHand(const std::vector<card>& cards, int& handRank, std::vector<int>& handValues);
+    gamePlayer* determineWinningPlayer();
     void drawCardToPlayer(gamePlayer * p, bool shouldBePrivate);
-    std::string getDisplayedPlayer(gamePlayer * player, gamePlayer * viewingPlayer);
-
+    card getRandomCard();
+    std::string getDisplayedPlayer(gamePlayer * player, gamePlayer * viewingPlayer, bool isShow);
     void startPoker();
+    void determineWhoWins();
     void pokerGame();
     bool pokerResponse(const std::string &lastResponse);
+    void UpdateDisplayForAll(bool isLast);
 };
 
 #endif // GAME_H
