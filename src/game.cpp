@@ -451,9 +451,10 @@ void Game::determineWhoWins()
             winMsg = "YOU WON $" + std::to_string(pokerGameData.pot) + "!!!\n";
         else
             winMsg = "YOU LOST :(\n" + winningPlayer->name + " has won $" + std::to_string(pokerGameData.pot);
-        sleep(10);
+        
         host->sendMessageToClient(p.client, winMsg + "\n\n" + "Loading next round in 10 seconds...", false);
     }
+    sleep(10);
     winningPlayer->money += pokerGameData.pot;
     resetGame();
 }
