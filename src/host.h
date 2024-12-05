@@ -37,12 +37,13 @@ public:
     void promptComplete();
     std::string getReponseFromClientPrompt();
     void reprompt(Player * client);
+    void enableOneTimeOverride();
 
 private:
     // Private
 
     int client_sockets[8] = {0};
-
+    bool oneTimeOverride;
     Player clients[MAX_CLIENTS] = {};
 
     Player * promptedClient = nullptr;

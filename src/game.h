@@ -28,6 +28,7 @@ struct gamePlayer
     int raise = 0;
     bool isFolded = false;
     bool hasGone = false;
+    bool isBetting = false;
 
 } typedef gamePlayer;
 

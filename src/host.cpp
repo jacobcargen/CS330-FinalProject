@@ -13,6 +13,7 @@ Player clients[MAX_CLIENTS] = {};
 Player * promptedClient = nullptr;
 std::string clientPromptResponse = "";
 std::string lastPrompt = "";
+bool oneTimeOverride = false;
 
 // Constructor: Starts the host server when an object of Host is created
 Host::Host() 
@@ -70,103 +71,125 @@ void Host::start()
         int max_sd = server_fd;
         for (const Player& client : clients) 
         {
-            if (client.socket > 0) FD_SET(client.socket, &readfds);
+            if (client.socket > 0) 
+                FD_SET(client.socket, &readfds);
             max_sd = std::max(max_sd, client.socket);
         }
 
-        
-        int activity = select(max_sd + 1, &readfds, nullptr, nullptr, nullptr);
-        if (activity <= 0)
-            return;
-        
-        // Handle new connections
-        if (!game.hasStarted() && FD_ISSET(server_fd, &readfds)) 
+        if (!oneTimeOverride)
         {
-            int new_socket = accept(server_fd, (sockaddr*)&address, (socklen_t*)&addrlen);
-            if (new_socket < 0) 
+            std::cout << "Awaiting activity\n";
+            int activity = select(max_sd + 1, &readfds, nullptr, nullptr, nullptr);
+            if (activity <= 0)
             {
-                perror("Accept failed");
-                continue;
+                std::cout << "returning, no activity\n";
+                return;
             }
 
+            // Handle new connections
+            if (!game.hasStarted() && FD_ISSET(server_fd, &readfds)) 
+            {
+                int new_socket = accept(server_fd, (sockaddr*)&address, (socklen_t*)&addrlen);
+                if (new_socket < 0) 
+                {
+                    perror("Accept failed");
+                    continue;
+                }
+
+                for (Player& client : clients) 
+                {
+                    if (client.socket == 0) 
+                    {
+                        client.socket = new_socket;
+                        std::cout << "Client[" << client.socket << "] has joined the server.\n";
+                        sendMessageToClient(&client, WELCOME_MSG, false);
+                        sendMessageToClient(&client, PROMPT_MSG + "Type ('x') to ready-up: ", false);
+                        /*
+                        UI ui;
+                        std::string str = ui.getTestHand() + "\n\n\n\n\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n";
+                        std::cout << "length:" << str.length() << std::endl;
+                        sendMessageToClient(&client, str);
+                        */
+                        break;
+                    }
+                }
+            }
+
+            // Handle msgs
             for (Player& client : clients) 
             {
-                if (client.socket == 0) 
+                if (client.socket > 0 && FD_ISSET(client.socket, &readfds)) 
                 {
-                    client.socket = new_socket;
-                    std::cout << "Client[" << client.socket << "] has joined the server.\n";
-                    sendMessageToClient(&client, WELCOME_MSG, false);
-                    sendMessageToClient(&client, PROMPT_MSG + "Type ('x') to ready-up: ", false);
-                    /*
-                    UI ui;
-                    std::string str = ui.getTestHand() + "\n\n\n\n\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n";
-                    std::cout << "length:" << str.length() << std::endl;
-                    sendMessageToClient(&client, str);
-                    */
-                    break;
-                }
-            }
-        }
+                    char buffer[MESSAGE_SIZE] = {0};
+                    int valread = read(client.socket, buffer, sizeof(buffer));
 
-        // Handle messages from existing clients
-        for (Player& client : clients) 
-        {
-            if (client.socket > 0 && FD_ISSET(client.socket, &readfds)) 
-            {
-                char buffer[MESSAGE_SIZE] = {0};
-                int valread = read(client.socket, buffer, sizeof(buffer));
-
-                if (valread == 0) // Client disconnected
-                {
-                    std::cout << "Client[" << client.socket << "] disconnected.\n";
-                    close(client.socket);
-                    client = {}; // Reset the client object
-                }
-                else 
-                {
-                    buffer[valread] = '\0'; // Null-terminate the received data
-                    std::string clientMsg(buffer);
-                    std::cout << "Client[" << client.socket << "]: " << clientMsg << "\n";
-                    if (promptedClient == &client)
+                    if (valread == 0) // Client disconnected
                     {
-                        clientPromptResponse = clientMsg;
+                        std::cout << "Client[" << client.socket << "] disconnected.\n";
+                        close(client.socket);
+                        client = {}; // Reset the client object
                     }
-                    // Handle "ready up" logic
-                    if (!client.isReady && clientMsg == "x") 
+                    else 
                     {
-                        // Add player to the game
-                        game.AddPlayer("Player" + std::to_string(client.socket), &client);
-                        client.isReady = true;
-
-                        // Check if all clients are ready
-                        bool allReady = true;
-                        for (const Player& c : clients) 
+                        buffer[valread] = '\0'; // Null termd data
+                        std::string clientMsg(buffer);
+                        std::cout << "Client[" << client.socket << "]: " << clientMsg << "\n";
+                        if (promptedClient == &client)
                         {
-                            if (c.socket > 0 && !c.isReady) 
+                            clientPromptResponse = clientMsg;
+                        }
+                        // rdy up logic
+                        if (!client.isReady && clientMsg == "x") 
+                        {
+                            // Add player to the game
+                            game.AddPlayer("Player" + std::to_string(client.socket), &client);
+                            client.isReady = true;
+
+                            // Check if all clients are ready
+                            bool allReady = true;
+                            for (const Player& c : clients) 
                             {
-                                allReady = false;
-                                break;
+                                if (c.socket > 0 && !c.isReady) 
+                                {
+                                    allReady = false;
+                                    break;
+                                }
+                            }
+
+                            if (allReady)
+                            {
+                                std::cout << "All players are ready! Starting game...\n";
+                                game.setGameAsReady();
                             }
                         }
 
-                        if (allReady)
-                        {
-                            std::cout << "All players are ready! Starting game...\n";
-                            game.setGameAsReady();
-                        }
+
                     }
-
-
                 }
+                else 
+                    std::cout << "something else\n";
             }
         }
+        
+
+        if (oneTimeOverride)
+            oneTimeOverride = false;
+        
+        
         if (game.hasStarted())
         {
             game.gameTick();
         }
+        else
+            std::cout << "game not started\n";
     }
     std::cout << "Closing\n";
     close(server_fd);
+}
+
+void Host::enableOneTimeOverride()
+{
+    oneTimeOverride = true;
 }
 
 void Host::reprompt(Player * client)
