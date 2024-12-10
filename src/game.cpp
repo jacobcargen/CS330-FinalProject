@@ -727,12 +727,8 @@ void Game::pokerGame()
 
     if (pLeft <= 1)
     {
-        std::cout << "pLeft<=1\n";
-        // currentPlayerTurn has won
-        std::string winMsg = "You won $" + std::to_string(pokerGameData.pot);
-        host->sendMessageToClient(currentPlayerTurn->client, winMsg, false);
-        currentPlayerTurn->money += pokerGameData.pot;
         UpdateDisplayForAll(true);
+        determineWhoWins();
         resetGame();
         return;
     }
