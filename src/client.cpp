@@ -20,10 +20,9 @@ void Client::Start()
     UI ui;
 
     // Prompt for server IP address
-    std::string ip;// = ui.promptLine("Server IP:");
+    std::string ip = ui.promptLine("Server IP:");
     // Attempt to join the server
     
-    ip = "127.0.0.1";
     Join(ip);
 }
 
